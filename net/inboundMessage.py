@@ -1,7 +1,6 @@
 import socket
 import os, sys
 import json
-from _thread import *
 import pickle
 import random
 import time
@@ -39,12 +38,12 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
             message = {
                     "username": "",
                     "channel": "",
-                    "content": ["","system","[SERVER] Insufficient Permissions"],
+                    "content": ["","system","[SERVER] Insufficient Permissions", ""],
                     "messagetype": "outboundMessage"
                     }
             data = encode(message)
             conn.send(data)
-            print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+            print("Sent " + message["messagetype"] + " to client " + user["username"] + "(" + str(user["addr"]) + ")")
         elif split_command[0] == "/a":
             if "x" in flags or "M" in flags or "a" in flags:
                 colour = ColorHash(user["username"])
@@ -63,7 +62,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                 message = {
                     "username": "",
                     "channel": "",
-                    "content": ["","system","[SERVER] Insufficient Permissions"],
+                    "content": ["","system","[SERVER] Insufficient Permissions", ""],
                     "messagetype": "outboundMessage"
                     }
                 data = encode(message)
@@ -79,7 +78,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                     message = {
                         "username": "",
                         "channel": "",
-                        "content": ["","system","[WHOIS] User could not be found"],
+                        "content": ["","system","[WHOIS] User could not be found", ""],
                         "messagetype": "outboundMessage"
                         }
                     data = encode(message)
@@ -89,7 +88,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                     message = {
                         "username": "",
                         "channel": "",
-                        "content": ["","system", "[WHOIS] " + str(targetUser["addr"])],
+                        "content": ["","system", "[WHOIS] " + str(targetUser["addr"]), ""],
                         "messagetype": "outboundMessage"
                         }
                     data = encode(message)
@@ -99,7 +98,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                 message = {
                     "username": "",
                     "channel": "",
-                    "content": ["","system","[SERVER] Insufficient Permissions"],
+                    "content": ["","system","[SERVER] Insufficient Permissions", ""],
                     "messagetype": "outboundMessage"
                     }
                 data = encode(message)
@@ -114,7 +113,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                                 message = {
                                     "username": "",
                                     "channel": "",
-                                    "content": ["","system","[SERVER] "+cl["username"]+" was kicked from the server"],
+                                    "content": ["","system","[SERVER] "+cl["username"]+" was kicked from the server", ""],
                                     "messagetype": "outboundMessage"
                                     }
                                 data = encode(message)
@@ -128,7 +127,29 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                             }
                         data = encode(message)
                         cl["conn"].send(data)
-                        
+                        cl["check"] = False
+                        oldChannel = cl["channel"]
+                        clients.remove(cl)
+                        oldChannelCls = []
+                        for cl in clients:
+                            if cl["channel"] == oldChannel: # If the client is in the old channel
+                                found = False
+                                for a in admins:
+                                    if a[0] == cl["addr"][0]:
+                                        oldChannelCls.append(cl["username"]  + " \u2606")
+                                        found = True
+                                if found == False:
+                                    oldChannelCls.append(cl["username"])
+                        for cl in clients:
+                            if cl["channel"] == oldChannel:                                
+                                message = {
+                                    "username": "",
+                                    "channel": cl["channel"],
+                                    "content": oldChannelCls,
+                                    "messagetype": "channelMembers"
+                                    }
+                                data = encode(message)
+                                cl["conn"].send(data)
                         
         elif split_command[0] == "/modify":
             if "x" in flags or "m" in flags:
@@ -140,7 +161,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                     message = {
                         "username": "",
                         "channel": "",
-                        "content": ["","system","[MODIFY] User could not be found"],
+                        "content": ["","system","[MODIFY] User could not be found", ""],
                         "messagetype": "outboundMessage"
                         }
                     data = encode(message)
@@ -156,7 +177,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                     message = {
                         "username": "",
                         "channel": "",
-                        "content": ["","system","[MODIFY] User permissions updated"],
+                        "content": ["","system","[MODIFY] User permissions updated", ""],
                         "messagetype": "outboundMessage"
                         }
                     data = encode(message)
@@ -192,7 +213,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                 message = {
                     "username": "",
                     "channel": "",
-                    "content": ["","system","[SERVER] Insufficient Permissions"],
+                    "content": ["","system","[SERVER] Insufficient Permissions", ""],
                     "messagetype": "outboundMessage"
                     }
                 data = encode(message)

@@ -1,7 +1,6 @@
 import socket
 import os, sys
 import json
-from _thread import *
 import pickle
 import random
 import time
@@ -52,4 +51,4 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
 	        cl["conn"].send(data)
 	        print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))
 	conn.close()                   
-	check = False
+	user["check"] = False

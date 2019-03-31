@@ -1,7 +1,6 @@
 import socket
 import os, sys
 import json
-from _thread import *
 import pickle
 import random
 import time

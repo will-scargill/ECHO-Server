@@ -1,15 +1,15 @@
 import socket
 import os, sys
 import json
-from _thread import *
+import threading
 import pickle
 import random
 import time
 import sqlite3
 import datetime
 import re
-import queue
-import binascii
+
+os.chdir("/home/echo/")
 
 from net import inboundMessage
 from net import changedChannel
@@ -26,7 +26,7 @@ tables = [
     },
     {
         "name": "admin_ips",
-        "columns": "ip TEXT, flags TEXT, permlevel TEXT, colour TEXT"
+        "columns": "ip TEXT, flags TEXT, permlevel TEXT"
     },
     {
         "name": "chatlogs",
@@ -83,11 +83,12 @@ def client_connection_thread(conn, addr):
             "username": data["content"][0],
             "channel": "",
             "conn": conn,
-            "addr": addr
+            "addr": addr,
+            "check": False
             }
         if data["content"][1] == password:
 
-            check = True
+            user["check"] = True
             
             message = {
             "username": "",
@@ -111,8 +112,7 @@ def client_connection_thread(conn, addr):
                     conn.send(data)
                     print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
             clients.append(user)
-            mainQueue = queue.Queue()
-            while (check == True):
+            while (user["check"] == True):
                 rawData = conn.recv(4096)
                 rawData = decode(rawData)
                 for data in rawData:
@@ -178,7 +178,7 @@ host = "127.0.0.1"
 port = 16000
 
 try:
-    s.bind((host, port))
+    s.bind(("", port))
 except socket.error as e:
     print(e)
 
@@ -191,5 +191,5 @@ print("Listening...")
 while True:
     conn, addr = s.accept()
 
-    start_new_thread(client_connection_thread, (conn, addr,))
+    threading.Thread(target=client_connection_thread, args=(conn,addr)).start()
 
