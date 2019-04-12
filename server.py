@@ -8,13 +8,19 @@ import time
 import sqlite3
 import datetime
 import re
+import base64
 
-os.chdir("/home/echo/")
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Cipher import AES
+
+#os.chdir("/home/echo/")
 
 from net import inboundMessage
 from net import changedChannel
 from net import disconnect
 from net import messageReq
+from net import userReq
 
 sqlite3_conn = sqlite3.connect("database.db", check_same_thread=False)
 c = sqlite3_conn.cursor()
@@ -76,17 +82,74 @@ def decode(data):
 def client_connection_thread(conn, addr):
     try:
         confirmedDisconnect = False
+        data = conn.recv(1024) # Recieve 'keyRequest'
+        data = decode(data)
+        data = json.loads(data[0])
+        
+        # Encryption set up start
+
+        fileIn = open("private.pem", "rb")
+        bytesIn = fileIn.read()
+        private = RSA.import_key(bytesIn)
+        fileIn.close()
+
+        fileIn = open("public.pem", "rb")
+        bytesIn = fileIn.read()
+        public = RSA.import_key(bytesIn)
+        fileIn.close()
+
+        publicToSend = bytesIn.decode('utf-8')
+        
+        encObject = PKCS1_OAEP.new(public)
+        decObject = PKCS1_OAEP.new(private)
+        
+        message = {
+            "username": "",
+            "chanel": "",
+            "content": publicToSend,
+            "messagetype": "publicKey"
+            }
+        data = encode(message)
+        conn.send(data)
+
+        
+        data = conn.recv(1024) # Recieve 'secretKey'
+        data = data.decode('utf-8')
+        data = json.loads(data)
+
+        secretKey = decObject.decrypt(base64.b64decode(data["content"]))
+
+        print(secretKey)
+
+        message = {
+            "username": "",
+            "chanel": "",
+            "content": "",
+            "messagetype": "confirmed"
+            }
+        data = encode(message)
+        conn.send(data) 
+
+        # Encryption set up end
+        
         data = conn.recv(1024)
         data = decode(data)
         data = json.loads(data[0])
+            
         user = {
             "username": data["content"][0],
             "channel": "",
             "conn": conn,
             "addr": addr,
-            "check": False
+            "check": False,
+            "secret": secretKey
             }
-        if data["content"][1] == password:
+        c.execute("SELECT * FROM banned_ips")
+        bannedIpsAllData = c.fetchall()
+        bannedIps = []
+        for usr in bannedIpsAllData:
+            bannedIps.append(usr[0])
+        if (data["content"][1] == password) and (user["addr"][0] not in bannedIps):
 
             user["check"] = True
             
@@ -117,31 +180,45 @@ def client_connection_thread(conn, addr):
                 rawData = decode(rawData)
                 for data in rawData:
                     data = json.loads(data)
-                    try:
-                        print("Recieved " + data["messagetype"] + " from client " + user["username"] + str(user["addr"]))
-                        #print(data["content"])
-                        if data["messagetype"] == "inboundMessage":
-                            inboundMessage.handle(conn, addr, c, sqlite3_conn, data, user, clients)
-                        elif data["messagetype"] == "changedChannel":
-                            changedChannel.handle(conn, addr, c, sqlite3_conn, data, user, clients)
-                        elif data["messagetype"] == "disconnect":
-                            disconnect.handle(conn, addr, c ,sqlite3_conn, data, user, clients)
-                        elif data["messagetype"] == "messageReq":
-                            messageReq.handle(conn, addr, c, sqlite3_conn, data, user, clients)
-                    except TypeError:
-                        print("Recieved data triggered type error - slowdown")
+                    #try:
+                    print("Recieved " + data["messagetype"] + " from client " + user["username"] + str(user["addr"]))
+                    #print(data["content"])
+                    if data["messagetype"] == "inboundMessage":
+                        inboundMessage.handle(conn, addr, c, sqlite3_conn, data, user, clients)
+                    elif data["messagetype"] == "changedChannel":
+                        changedChannel.handle(conn, addr, c, sqlite3_conn, data, user, clients)
+                    elif data["messagetype"] == "disconnect":
+                        disconnect.handle(conn, addr, c ,sqlite3_conn, data, user, clients)
+                    elif data["messagetype"] == "messageReq":
+                        messageReq.handle(conn, addr, c, sqlite3_conn, data, user, clients)
+                    elif data["messagetype"] == "userReq":
+                        userReq.handle(conn, addr, c, sqlite3_conn, data, user, clients)
+                        
+                    #except TypeError:
+                        #print("Recieved data triggered type error - slowdown")
                     
                     
         else:
-            message = {
-            "username": "",
-            "channel": "",
-            "content": "",
-            "messagetype": "connReqDenied"
-            }
-            data = encode(message)
-            conn.send()
-            print("Connection request from " + str(addr) + " denied")
+            if (user["addr"][0] in bannedIps):
+                message = {
+                "username": "",
+                "channel": "",
+                "content": "banned",
+                "messagetype": "connReqDenied"
+                }
+                data = encode(message)
+                conn.send(data)
+                print("Connection request from " + str(addr) + " denied - User is banned")
+            elif (data["content"][1] != password):
+                message = {
+                "username": "",
+                "channel": "",
+                "content": "password",
+                "messagetype": "connReqDenied"
+                }
+                data = encode(message)
+                conn.send(data)
+                print("Connection request from " + str(addr) + " denied - Incorrect password")
                          
             conn.close()
     except(ConnectionResetError) as e:

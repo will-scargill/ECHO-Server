@@ -42,6 +42,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
 	    "content": channelHistory,
 	    "messagetype": "additionalHistory"
 	    }
+	#print(message)
 	data = encode(message)
 	conn.send(data)
 
