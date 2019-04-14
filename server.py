@@ -16,6 +16,9 @@ from Crypto.Cipher import AES
 
 #os.chdir("/home/echo/")
 
+from modules import aes
+from modules import config
+
 from net import inboundMessage
 from net import changedChannel
 from net import disconnect
@@ -24,6 +27,17 @@ from net import userReq
 
 sqlite3_conn = sqlite3.connect("database.db", check_same_thread=False)
 c = sqlite3_conn.cursor()
+
+try:
+    fileIn = open("public.pem", "rb")
+    fileIn.close()
+    fileIn = open("private.pem", "rb")
+    fileIn.close()
+except:
+    print("Rsa keys not found, generating...")
+    exec(open("regenerateRsaKeys.py").read())
+
+
 
 tables = [
     {
@@ -60,9 +74,11 @@ for table in tables:
 
 clients = []
 
-channels = ["Channel 1", "Channel 2", "Channel 3", "Spam Channel"]
+channels = config.GetSetting("channels")
 
-password = ""
+password = config.GetSetting("password")
+
+print(password)
 
 def encode(data):
     data = json.dumps(data) #Json dump message
@@ -73,18 +89,51 @@ def decode(data):
         data = data.decode('utf-8') #Decode utf-8 data
         data = data.strip()
         data = re.findall('.*?[}]', data)
-        #data = json.loads(data) #Load from json
-        return(data)
+        dataToReturn = []
+        for item in data:
+            item = json.loads(item)
+            dataToReturn.append(item)
+        return(dataToReturn)
+    except json.decoder.JSONDecodeError:
+        print("json error")
+        print(data)
+
+def encodeEncrypted(data, key):
+    data = json.dumps(data)
+    data, iv = aes.Encrypt(data, key)
+    dataToReturn = []
+    dataToReturn.append(data)
+    dataToReturn.append(iv)
+    dataToReturn = json.dumps(dataToReturn)
+    dataToReturn = dataToReturn.encode('utf-8')
+    return dataToReturn
+    
+
+def decodeEncrypted(data, key):
+    try:
+        data = data.decode('utf-8') #Decode utf-8 data
+        data = data.strip()
+        data = json.loads(data)
+        data = aes.Decrypt(data[0], key, data[1])
+        data = data.decode('utf-8')
+        data = re.findall('.*?[}]', data)
+        dataToReturn = []
+        for item in data:
+            item = json.loads(item)
+            dataToReturn.append(item)
+        return dataToReturn
     except json.decoder.JSONDecodeError:
         print("json error")
         print(data)
 
 def client_connection_thread(conn, addr):
     try:
+        print("Incoming connection from address " + str(addr))
         confirmedDisconnect = False
         data = conn.recv(1024) # Recieve 'keyRequest'
         data = decode(data)
-        data = json.loads(data[0])
+
+        print("Recieved keyRequest from address " + str(addr))
         
         # Encryption set up start
 
@@ -112,14 +161,15 @@ def client_connection_thread(conn, addr):
         data = encode(message)
         conn.send(data)
 
+        print("Sent publicKey to address " + str(addr))
+
         
         data = conn.recv(1024) # Recieve 'secretKey'
         data = data.decode('utf-8')
         data = json.loads(data)
-
+        print("Recieved secretKey from address " + str(addr))
+        
         secretKey = decObject.decrypt(base64.b64decode(data["content"]))
-
-        print(secretKey)
 
         message = {
             "username": "",
@@ -128,16 +178,17 @@ def client_connection_thread(conn, addr):
             "messagetype": "confirmed"
             }
         data = encode(message)
-        conn.send(data) 
+        conn.send(data)
+
+        print("Sent confirmed to address " + str(addr))
 
         # Encryption set up end
         
         data = conn.recv(1024)
-        data = decode(data)
-        data = json.loads(data[0])
-            
+        data = decodeEncrypted(data, secretKey)
+        
         user = {
-            "username": data["content"][0],
+            "username": data[0]["content"][0],
             "channel": "",
             "conn": conn,
             "addr": addr,
@@ -149,7 +200,7 @@ def client_connection_thread(conn, addr):
         bannedIps = []
         for usr in bannedIpsAllData:
             bannedIps.append(usr[0])
-        if (data["content"][1] == password) and (user["addr"][0] not in bannedIps):
+        if (data[0]["content"][1] == password) and (user["addr"][0] not in bannedIps):
 
             user["check"] = True
             
@@ -159,7 +210,7 @@ def client_connection_thread(conn, addr):
             "content": channels,
             "messagetype": "connReqAccepted"
             }
-            data = encode(message)
+            data = encodeEncrypted(message, user["secret"])
             conn.send(data)
             print("Connection request from " + str(addr) + " approved")
             for cl in clients:
@@ -177,10 +228,8 @@ def client_connection_thread(conn, addr):
             clients.append(user)
             while (user["check"] == True):
                 rawData = conn.recv(4096)
-                rawData = decode(rawData)
+                rawData = decodeEncrypted(rawData, user["secret"])
                 for data in rawData:
-                    data = json.loads(data)
-                    #try:
                     print("Recieved " + data["messagetype"] + " from client " + user["username"] + str(user["addr"]))
                     #print(data["content"])
                     if data["messagetype"] == "inboundMessage":
@@ -206,17 +255,17 @@ def client_connection_thread(conn, addr):
                 "content": "banned",
                 "messagetype": "connReqDenied"
                 }
-                data = encode(message)
+                data = encodeEncrypted(message, user["secret"])
                 conn.send(data)
                 print("Connection request from " + str(addr) + " denied - User is banned")
-            elif (data["content"][1] != password):
+            elif (data[0]["content"][1] != password):
                 message = {
                 "username": "",
                 "channel": "",
                 "content": "password",
                 "messagetype": "connReqDenied"
                 }
-                data = encode(message)
+                data = encodeEncrypted(message, user["secret"])
                 conn.send(data)
                 print("Connection request from " + str(addr) + " denied - Incorrect password")
                          
@@ -241,7 +290,7 @@ def client_connection_thread(conn, addr):
                         "content": oldChannelCls,
                         "messagetype": "channelMembers"
                         }
-                    data = encode(message)
+                    data = encodeEncrypted(message, cl["secret"])
                     cl["conn"].send(data)
                     print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))            
         except() as e:
