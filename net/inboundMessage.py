@@ -10,6 +10,18 @@ import binascii
 
 from modules.colorhash import ColorHash
 
+from modules import aes
+
+def encodeEncrypted(data, key):
+    data = json.dumps(data)
+    data, iv = aes.Encrypt(data, key)
+    dataToReturn = []
+    dataToReturn.append(data)
+    dataToReturn.append(iv)
+    dataToReturn = json.dumps(dataToReturn)
+    dataToReturn = dataToReturn.encode('utf-8')
+    return dataToReturn
+
 def encode(data):
     data = json.dumps(data) #Json dump message
     data = data.encode('utf-8') #Encode message in utf-8
@@ -50,9 +62,10 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                         "content": [dt, user["username"], ("[PM] " + pmContent), colour.hex],
                         "messagetype": "outboundMessage"
                         }
-                    data = encode(message)
+                    data = encodeEncrypted(message, cl["secret"])
                     targetCl["conn"].send(data)
                     print("Sent " + message["messagetype"] + " to client " + targetCl["username"] + "(" + str(user["addr"]) + ")")
+                    data = encodeEncrypted(message, user["secret"])
                     conn.send(data)
                     print("Sent " + message["messagetype"] + " to client " + user["username"] + "(" + str(user["addr"]) + ")")
 
@@ -63,7 +76,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                     "content": ["","system","[SERVER] User not found", ""],                                                                                        
                     "messagetype": "outboundMessage",
                     }
-                data = encode(message)
+                data = encodeEncrypted(message, user["secret"])
                 conn.send(data)
                 print("Sent " + message["messagetype"] + " to client " + user["username"] + "(" + str(user["addr"]) + ")")
         else: # Admin command
@@ -74,7 +87,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                         "content": ["","system","[SERVER] Insufficient Permissions", ""],
                         "messagetype": "outboundMessage"
                         }
-                data = encode(message)
+                data = encodeEncrypted(message, user["secret"])
                 conn.send(data)
                 print("Sent " + message["messagetype"] + " to client " + user["username"] + "(" + str(user["addr"]) + ")")
             elif split_command[0] == "/a":
@@ -85,9 +98,9 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                             "channel": "",
                             "content": ["", "system", "[ANNOUNCEMENT] "+" ".join(split_command[1:]), ""],
                             "messagetype": "outboundMessage"
-                        }
-                    data = encode(message)
+                        }               
                     for cl in clients:
+                        data = encodeEncrypted(message, cl["secret"])
                         cl["conn"].send(data)
                         print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
 
@@ -98,7 +111,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                         "content": ["","system","[SERVER] Insufficient Permissions", ""],
                         "messagetype": "outboundMessage"
                         }
-                    data = encode(message)
+                    data = encodeEncrypted(message, user["secret"])
                     conn.send(data)
                     print("Sent " + message["messagetype"] + " to client " + user["username"] + "(" + str(cl["addr"]) + ")")
             elif split_command[0] == "/whois":
@@ -114,7 +127,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                             "content": ["","system","[WHOIS] User could not be found", ""],
                             "messagetype": "outboundMessage"
                             }
-                        data = encode(message)
+                        data = encodeEncrypted(message, user["secret"])
                         conn.send(data)
                         print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                     else:
@@ -124,7 +137,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                             "content": ["","system", "[WHOIS] " + str(targetUser["addr"]), ""],
                             "messagetype": "outboundMessage"
                             }
-                        data = encode(message)
+                        data = encodeEncrypted(message, user["secret"])
                         conn.send(data)
                         print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                 else:
@@ -134,7 +147,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                         "content": ["","system","[SERVER] Insufficient Permissions", ""],
                         "messagetype": "outboundMessage"
                         }
-                    data = encode(message)
+                    data = encodeEncrypted(message, user["secret"])
                     conn.send(data)
                     print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
             elif split_command[0] == "/kick":
@@ -149,7 +162,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                                         "content": ["","system","[SERVER] "+cl["username"]+" was kicked from the server", ""],
                                         "messagetype": "outboundMessage"
                                         }
-                                    data = encode(message)
+                                    data = encodeEncrypted(message, cl2["secret"])
                                     cl2["conn"].send(data)
                             kickReason = " ".join(split_command[2:])
                             message = {
@@ -158,7 +171,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                                 "content": kickReason,
                                 "messagetype": "userKicked"
                                 }
-                            data = encode(message)
+                            data = encodeEncrypted(message, cl["secret"])
                             cl["conn"].send(data)
                             cl["check"] = False
                             oldChannel = cl["channel"]
@@ -181,7 +194,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                                         "content": oldChannelCls,
                                         "messagetype": "channelMembers"
                                         }
-                                    data = encode(message)
+                                    data = encodeEncrypted(message, cl["secret"])
                                     cl["conn"].send(data)
                             
             elif split_command[0] == "/modify":
@@ -197,7 +210,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                             "content": ["","system","[MODIFY] User could not be found", ""],
                             "messagetype": "outboundMessage"
                             }
-                        data = encode(message)
+                        data = encodeEncrypted(message, user["secret"])
                         conn.send(data)
                         print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                     else:
@@ -213,7 +226,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                             "content": ["","system","[MODIFY] User permissions updated", ""],
                             "messagetype": "outboundMessage"
                             }
-                        data = encode(message)
+                        data = encodeEncrypted(message, user["secret"])
                         conn.send(data)
                         print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                         c.execute("SELECT * FROM admin_ips")
@@ -237,7 +250,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                                     "content": oldChannelCls,
                                     "messagetype": "channelMembers"
                                     }
-                                data = encode(message)
+                                data = encodeEncrypted(message, cl["secret"])
                                 cl["conn"].send(data)
                                 print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))
                                 
@@ -249,7 +262,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                         "content": ["","system","[SERVER] Insufficient Permissions", ""],
                         "messagetype": "outboundMessage"
                         }
-                    data = encode(message)
+                    data = encodeEncrypted(message, user["secret"])
                     conn.send(data)
                     print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                 
@@ -265,10 +278,10 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
             "channel": data["channel"],
             "content": [str(dt), user["username"], data["content"], colour.hex],
             "messagetype": "outboundMessage"
-            }
-        data = encode(message)
+            }       
         for cl in clients:
             if cl["channel"] == user["channel"]:
+                data = encodeEncrypted(message, cl["secret"])
                 cl["conn"].send(data)
                 print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))
         c.execute("INSERT INTO chatlogs (ip, username, channel, date, message) values (?,?,?,?,?)",[str(user["addr"]), user["username"], user["channel"], dt, msgContent])

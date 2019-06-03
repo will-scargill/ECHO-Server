@@ -7,6 +7,18 @@ import time
 import sqlite3
 import datetime
 
+from modules import aes
+
+def encodeEncrypted(data, key):
+    data = json.dumps(data)
+    data, iv = aes.Encrypt(data, key)
+    dataToReturn = []
+    dataToReturn.append(data)
+    dataToReturn.append(iv)
+    dataToReturn = json.dumps(dataToReturn)
+    dataToReturn = dataToReturn.encode('utf-8')
+    return dataToReturn
+
 def encode(data):
     data = json.dumps(data) #Json dump message
     data = data.encode('utf-8') #Encode message in utf-8
@@ -43,7 +55,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
 	    "messagetype": "additionalHistory"
 	    }
 	#print(message)
-	data = encode(message)
+	data = encodeEncrypted(message, user["secret"])
 	conn.send(data)
 
 	print("Sent " + message["messagetype"] + " to client " + user["username"] + str(user["addr"]))

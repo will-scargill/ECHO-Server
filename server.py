@@ -25,6 +25,8 @@ from net import disconnect
 from net import messageReq
 from net import userReq
 
+from net import sendMessage
+
 sqlite3_conn = sqlite3.connect("database.db", check_same_thread=False)
 c = sqlite3_conn.cursor()
 
@@ -78,7 +80,6 @@ channels = config.GetSetting("channels")
 
 password = config.GetSetting("password")
 
-print(password)
 
 def encode(data):
     data = json.dumps(data) #Json dump message
@@ -211,7 +212,8 @@ def client_connection_thread(conn, addr):
             "messagetype": "connReqAccepted"
             }
             data = encodeEncrypted(message, user["secret"])
-            conn.send(data)
+            #conn.send(data)
+            sendMessage.sendMessage(conn, user, data)
             print("Connection request from " + str(addr) + " approved")
             for cl in clients:
                 if cl["username"] == user["username"]:
@@ -222,8 +224,8 @@ def client_connection_thread(conn, addr):
                         "content": "username",
                         "messagetype": "userUpdate"
                         }
-                    data = encode(message)
-                    conn.send(data)
+                    data = encodeEncrypted(message, user["secret"])
+                    sendMessage.sendMessage(conn, user, data)
                     print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
             clients.append(user)
             while (user["check"] == True):
