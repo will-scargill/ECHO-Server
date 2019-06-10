@@ -1,14 +1,25 @@
 import configparser
+import json
 
-def GetSetting(setting):
+def GetSetting(setting, section):
 	parser = configparser.ConfigParser()
-	parser.read("config.ini")
+	parser.read(r"configs/config.ini")
 	try:
-		data = json.loads(parser.get("Server", setting))
+		data = json.loads(parser.get(section, setting))
 		return data
 	except:
-		data = parser.get("Server", setting)
+		data = parser.get(section, setting)
 		if data == '""':
 			return ""
 		else:
 			return data
+
+def GetBlacklist():
+	wordBlacklist = []
+
+	with open(r'configs/wordblacklist.json', 'r') as f:
+		blacklistData = json.load(f)
+
+	for word in blacklistData:
+		wordBlacklist.append(word)
+	return wordBlacklist

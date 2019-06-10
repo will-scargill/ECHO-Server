@@ -18,6 +18,7 @@ from Crypto.Cipher import AES
 
 from modules import aes
 from modules import config
+from modules.encoding import encodeEncrypted, encode, decode
 
 from net import inboundMessage
 from net import changedChannel
@@ -27,19 +28,17 @@ from net import userReq
 
 from net import sendMessage
 
-sqlite3_conn = sqlite3.connect("database.db", check_same_thread=False)
+sqlite3_conn = sqlite3.connect(r"data/database.db", check_same_thread=False)
 c = sqlite3_conn.cursor()
 
 try:
-    fileIn = open("public.pem", "rb")
+    fileIn = open(r"data/public.pem", "rb")
     fileIn.close()
-    fileIn = open("private.pem", "rb")
+    fileIn = open(r"data/private.pem", "rb")
     fileIn.close()
 except:
     print("Rsa keys not found, generating...")
     exec(open("regenerateRsaKeys.py").read())
-
-
 
 tables = [
     {
@@ -76,52 +75,40 @@ for table in tables:
 
 clients = []
 
-channels = config.GetSetting("channels")
+channels = config.GetSetting("channels", "Server")
 
-password = config.GetSetting("password")
+password = config.GetSetting("password", "Server")
 
-
-def encode(data):
-    data = json.dumps(data) #Json dump message
-    data = data.encode('utf-8') #Encode message in utf-8
-    return(data) 
-def decode(data):
-    try:
-        data = data.decode('utf-8') #Decode utf-8 data
-        data = data.strip()
-        data = re.findall('.*?[}]', data)
-        dataToReturn = []
-        for item in data:
-            item = json.loads(item)
-            dataToReturn.append(item)
-        return(dataToReturn)
-    except json.decoder.JSONDecodeError:
-        print("json error")
-        print(data)
-
-def encodeEncrypted(data, key):
-    data = json.dumps(data)
-    data, iv = aes.Encrypt(data, key)
-    dataToReturn = []
-    dataToReturn.append(data)
-    dataToReturn.append(iv)
-    dataToReturn = json.dumps(dataToReturn)
-    dataToReturn = dataToReturn.encode('utf-8')
-    return dataToReturn
+port = config.GetSetting("port", "Server")
+    
+def splitCombinedMessages(data):
+    messages = []
+    dataSplit = data.split("][")
+    for d in dataSplit:
+        if d[0] != "[":
+            tData = "["
+            tData += d
+            d = tData
+        if d[(len(d) - 1)] != "]":
+            d += "]"
+        messages.append(d)
+    return messages
     
 
-def decodeEncrypted(data, key):
+def decodeEncrypted(rawData, key):
     try:
-        data = data.decode('utf-8') #Decode utf-8 data
-        data = data.strip()
-        data = json.loads(data)
-        data = aes.Decrypt(data[0], key, data[1])
-        data = data.decode('utf-8')
-        data = re.findall('.*?[}]', data)
-        dataToReturn = []
-        for item in data:
-            item = json.loads(item)
-            dataToReturn.append(item)
+        rawData = rawData.decode('utf-8') #Decode utf-8 data
+        rawData = rawData.strip()
+        splitData = splitCombinedMessages(rawData)
+        for data in splitData:
+            data = json.loads(data)
+            data = aes.Decrypt(data[0], key, data[1])
+            data = data.decode('utf-8')
+            data = re.findall('.*?[}]', data)
+            dataToReturn = []
+            for item in data:
+                item = json.loads(item)
+                dataToReturn.append(item)
         return dataToReturn
     except json.decoder.JSONDecodeError:
         print("json error")
@@ -138,12 +125,12 @@ def client_connection_thread(conn, addr):
         
         # Encryption set up start
 
-        fileIn = open("private.pem", "rb")
+        fileIn = open(r"data/private.pem", "rb")
         bytesIn = fileIn.read()
         private = RSA.import_key(bytesIn)
         fileIn.close()
 
-        fileIn = open("public.pem", "rb")
+        fileIn = open(r"data/public.pem", "rb")
         bytesIn = fileIn.read()
         public = RSA.import_key(bytesIn)
         fileIn.close()
@@ -201,7 +188,11 @@ def client_connection_thread(conn, addr):
         bannedIps = []
         for usr in bannedIpsAllData:
             bannedIps.append(usr[0])
-        if (data[0]["content"][1] == password) and (user["addr"][0] not in bannedIps):
+        userBanned = False
+        for ip in bannedIps:
+            if ip == user["addr"][0]:
+                userBanned = True
+        if (data[0]["content"][1] == password) and (userBanned == False):
 
             user["check"] = True
             
@@ -303,10 +294,10 @@ def client_connection_thread(conn, addr):
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 host = "127.0.0.1"
-port = 16000
+#port = 16000
 
 try:
-    s.bind(("", port))
+    s.bind(("", int(port)))
 except socket.error as e:
     print(e)
 

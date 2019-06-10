@@ -11,30 +11,30 @@ import binascii
 from modules.colorhash import ColorHash
 
 from modules import aes
+from modules import permissions
+from modules import config
+from modules import blacklist
+from modules.encoding import encodeEncrypted, encode, decode
 
-def encodeEncrypted(data, key):
-    data = json.dumps(data)
-    data, iv = aes.Encrypt(data, key)
-    dataToReturn = []
-    dataToReturn.append(data)
-    dataToReturn.append(iv)
-    dataToReturn = json.dumps(dataToReturn)
-    dataToReturn = dataToReturn.encode('utf-8')
-    return dataToReturn
+kickOnUse = (config.GetSetting("kickOnUse", "Blacklist"))
+blKickReason = config.GetSetting("kickReason", "Blacklist")
 
-def encode(data):
-    data = json.dumps(data) #Json dump message
-    data = data.encode('utf-8') #Encode message in utf-8
-    return(data) 
-def decode(data):
-    try:
-        data = data.decode('utf-8') #Decode utf-8 data
-        data = data.strip()
-        data = json.loads(data) #Load from json
-        return(data)
-    except json.decoder.JSONDecodeError:
-        print("json error")
-        print(data)
+if kickOnUse == "True":
+    kickOnUse = True
+elif kickOnUse == "False":
+    kickOnUse = False
+else:
+    print("Error - incomplete config [kickOnUse setting missing]")
+
+# Permission flags
+# x - admin
+# M - moderator
+# m - modify
+# k - kick
+# b - ban
+# a - announce
+# w - whois
+
 
 def handle(conn, addr, c, sqlite3_conn, data, user, clients):
     if data["content"][0] == "/": # Command
@@ -90,7 +90,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                 data = encodeEncrypted(message, user["secret"])
                 conn.send(data)
                 print("Sent " + message["messagetype"] + " to client " + user["username"] + "(" + str(user["addr"]) + ")")
-            elif split_command[0] == "/a":
+            elif split_command[0] == "/a": # Announcement
                 if "x" in flags or "M" in flags or "a" in flags:
                     #colour = ColorHash(user["username"])
                     message = {
@@ -114,7 +114,7 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                     data = encodeEncrypted(message, user["secret"])
                     conn.send(data)
                     print("Sent " + message["messagetype"] + " to client " + user["username"] + "(" + str(cl["addr"]) + ")")
-            elif split_command[0] == "/whois":
+            elif split_command[0] == "/whois": # Whois
                 if "x" in flags or "w" in flags:
                     targetUser = ""
                     for cl in clients:
@@ -131,15 +131,26 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                         conn.send(data)
                         print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                     else:
-                        message = {
-                            "username": "",
-                            "channel": "",
-                            "content": ["","system", "[WHOIS] " + str(targetUser["addr"]), ""],
-                            "messagetype": "outboundMessage"
-                            }
-                        data = encodeEncrypted(message, user["secret"])
-                        conn.send(data)
-                        print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+                        if permissions.canBeExecuted(user, targetUser, admins) == True:
+                            message = {
+                                "username": "",
+                                "channel": "",
+                                "content": ["","system", "[WHOIS] " + str(targetUser["addr"]), ""],
+                                "messagetype": "outboundMessage"
+                                }
+                            data = encodeEncrypted(message, user["secret"])
+                            conn.send(data)
+                            print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+                        else:
+                            message = {
+                                "username": "",
+                                "channel": "",
+                                "content": ["","system","[SERVER] Insufficient Permissions", ""],
+                                "messagetype": "outboundMessage"
+                                }
+                            data = encodeEncrypted(message, user["secret"])
+                            conn.send(data)
+                            print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                 else:
                     message = {
                         "username": "",
@@ -150,54 +161,68 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                     data = encodeEncrypted(message, user["secret"])
                     conn.send(data)
                     print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
-            elif split_command[0] == "/kick":
+            elif split_command[0] == "/kick": # Kick
                 if "x" in flags or "M" in flags or "k" in flags:
                     for cl in clients:
                         if cl["username"] == split_command[1]:
-                            for cl2 in clients:
-                                if cl2["channel"] == cl["channel"]:
-                                    message = {
-                                        "username": "",
-                                        "channel": "",
-                                        "content": ["","system","[SERVER] "+cl["username"]+" was kicked from the server", ""],
-                                        "messagetype": "outboundMessage"
-                                        }
-                                    data = encodeEncrypted(message, cl2["secret"])
-                                    cl2["conn"].send(data)
-                            kickReason = " ".join(split_command[2:])
-                            message = {
-                                "username": "",
-                                "channel": "",
-                                "content": kickReason,
-                                "messagetype": "userKicked"
-                                }
-                            data = encodeEncrypted(message, cl["secret"])
-                            cl["conn"].send(data)
-                            cl["check"] = False
-                            oldChannel = cl["channel"]
-                            clients.remove(cl)
-                            oldChannelCls = []
-                            for cl in clients:
-                                if cl["channel"] == oldChannel: # If the client is in the old channel
-                                    found = False
-                                    for a in admins:
-                                        if a[0] == cl["addr"][0]:
-                                            oldChannelCls.append(cl["username"]  + " \u2606")
-                                            found = True
-                                    if found == False:
-                                        oldChannelCls.append(cl["username"])
-                            for cl in clients:
-                                if cl["channel"] == oldChannel:                                
-                                    message = {
-                                        "username": "",
-                                        "channel": cl["channel"],
-                                        "content": oldChannelCls,
-                                        "messagetype": "channelMembers"
-                                        }
-                                    data = encodeEncrypted(message, cl["secret"])
-                                    cl["conn"].send(data)
-                            
-            elif split_command[0] == "/modify":
+                            if permissions.canBeExecuted(user, cl, admins) == True:
+                                kickReason = " ".join(split_command[2:])
+                                permissions.kickUser(cl, kickReason, clients, False)
+                            else:
+                                message = {
+                                    "username": "",
+                                    "channel": "",
+                                    "content": ["","system","[SERVER] Insufficient Permissions", ""],
+                                    "messagetype": "outboundMessage"
+                                    }
+                                data = encodeEncrypted(message, user["secret"])
+                                conn.send(data)
+                                print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+                else:
+                    message = {
+                        "username": "",
+                        "channel": "",
+                        "content": ["","system","[SERVER] Insufficient Permissions", ""],
+                        "messagetype": "outboundMessage"
+                        }
+                    data = encodeEncrypted(message, user["secret"])
+                    conn.send(data)
+                    print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+            elif split_command[0] == "/ban": # Ban
+                if "x" in flags or "M" in flags or "b" in flags:
+                    for cl in clients:
+                        if cl["username"] == split_command[1]:
+                            if permissions.canBeExecuted(user, cl, admins) == True:
+                                kickReason = " ".join(split_command[2:])
+                                currentDT = datetime.datetime.now()
+                                dt = str(currentDT.strftime("%d-%m-%Y %H:%M:%S"))
+
+                                c.execute("INSERT INTO banned_ips (ip, date_banned, reason, realtime) VALUES (?,?,?,?)",[str(cl["addr"][0]), dt, kickReason, time.time()])
+                                sqlite3_conn.commit()
+
+                                permissions.kickUser(cl, kickReason, clients, True)
+                            else:
+                                message = {
+                                    "username": "",
+                                    "channel": "",
+                                    "content": ["","system","[SERVER] Insufficient Permissions", ""],
+                                    "messagetype": "outboundMessage"
+                                    }
+                                data = encodeEncrypted(message, user["secret"])
+                                conn.send(data)
+                                print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+                else:
+                    message = {
+                        "username": "",
+                        "channel": "",
+                        "content": ["","system","[SERVER] Insufficient Permissions", ""],
+                        "messagetype": "outboundMessage"
+                        }
+                    data = encodeEncrypted(message, user["secret"])
+                    conn.send(data)
+                    print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+
+            elif split_command[0] == "/modify": # Modify
                 if "x" in flags or "m" in flags:
                     targetUser = ""
                     for cl in clients:
@@ -214,47 +239,56 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                         conn.send(data)
                         print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
                     else:
-                        try:
-                            c.execute("UPDATE admin_ips SET flags='"+split_command[2]+"' WHERE ip='"+targetUser["addr"][0]+"'")
-                            sqlite3_conn.commit()
-                        except IndexError:
-                            c.execute("UPDATE admin_ips SET flags='' WHERE ip='"+targetUser["addr"][0]+"'")
-                            sqlite3_conn.commit()
-                        message = {
-                            "username": "",
-                            "channel": "",
-                            "content": ["","system","[MODIFY] User permissions updated", ""],
-                            "messagetype": "outboundMessage"
-                            }
-                        data = encodeEncrypted(message, user["secret"])
-                        conn.send(data)
-                        print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
-                        c.execute("SELECT * FROM admin_ips")
-                        admins = c.fetchall()
-                        ChannelCls = []
-                        clients.remove(user)
-                        for cl in clients:
-                            if cl["channel"] == user["channel"]:
-                                found = False
-                                for a in admins:
-                                    if a[0] == cl["addr"][0]:
-                                        ChannelCls.append(cl["username"] + " \u2606")
-                                        found = True
-                                if found == False:
-                                    ChannelCls.append(cl["username"])
-                        for cl in clients: # Have to do this again :(
-                            if cl["channel"] == user["channel"]: # If client is in old channel
-                                message = {
-                                    "username": "",
-                                    "channel": user["channel"],
-                                    "content": oldChannelCls,
-                                    "messagetype": "channelMembers"
-                                    }
-                                data = encodeEncrypted(message, cl["secret"])
-                                cl["conn"].send(data)
-                                print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))
-                                
-                                
+                        if permissions.canBeExecuted(user, targetUser, admins) == True:
+                            try:
+                                c.execute("UPDATE admin_ips SET flags='"+split_command[2]+"' WHERE ip='"+targetUser["addr"][0]+"'")
+                                sqlite3_conn.commit()
+                            except IndexError:
+                                c.execute("UPDATE admin_ips SET flags='' WHERE ip='"+targetUser["addr"][0]+"'")
+                                sqlite3_conn.commit()
+                            message = {
+                                "username": "",
+                                "channel": "",
+                                "content": ["","system","[MODIFY] User permissions updated", ""],
+                                "messagetype": "outboundMessage"
+                                }
+                            data = encodeEncrypted(message, user["secret"])
+                            conn.send(data)
+                            print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")
+                            c.execute("SELECT * FROM admin_ips")
+                            admins = c.fetchall()
+                            ChannelCls = []
+                            clients.remove(user)
+                            for cl in clients:
+                                if cl["channel"] == user["channel"]:
+                                    found = False
+                                    for a in admins:
+                                        if a[0] == cl["addr"][0]:
+                                            ChannelCls.append(cl["username"] + " \u2606")
+                                            found = True
+                                    if found == False:
+                                        ChannelCls.append(cl["username"])
+                            for cl in clients: # Have to do this again :(
+                                if cl["channel"] == user["channel"]: # If client is in old channel
+                                    message = {
+                                        "username": "",
+                                        "channel": user["channel"],
+                                        "content": oldChannelCls,
+                                        "messagetype": "channelMembers"
+                                        }
+                                    data = encodeEncrypted(message, cl["secret"])
+                                    cl["conn"].send(data)
+                                    print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))
+                        else:
+                            message = {
+                                "username": "",
+                                "channel": "",
+                                "content": ["","system","[SERVER] Insufficient Permissions", ""],
+                                "messagetype": "outboundMessage"
+                                }
+                            data = encodeEncrypted(message, user["secret"])
+                            conn.send(data)
+                            print("Sent " + message["messagetype"] + " to client " + cl["username"] + "(" + str(cl["addr"]) + ")")                                      
                 else:
                     message = {
                         "username": "",
@@ -268,23 +302,37 @@ def handle(conn, addr, c, sqlite3_conn, data, user, clients):
                 
             
     else: # Regular Message
-        currentDT = datetime.datetime.now()
-        dt = str(currentDT.strftime("%d-%m-%Y %H:%M:%S"))
-        msgContent = data["content"]
-        #colour = str((binascii.hexlify(user["username"].encode('utf-8'))).decode('utf-8'))[:6]
-        colour = ColorHash(user["username"])
-        message = {
-            "username": "",
-            "channel": data["channel"],
-            "content": [str(dt), user["username"], data["content"], colour.hex],
-            "messagetype": "outboundMessage"
-            }       
-        for cl in clients:
-            if cl["channel"] == user["channel"]:
-                data = encodeEncrypted(message, cl["secret"])
-                cl["conn"].send(data)
-                print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))
-        c.execute("INSERT INTO chatlogs (ip, username, channel, date, message) values (?,?,?,?,?)",[str(user["addr"]), user["username"], user["channel"], dt, msgContent])
-        sqlite3_conn.commit()
-        c.execute("INSERT INTO tempchatlogs (username, channel, date, message, colour, realtime) values (?,?,?,?,?,?)",[user["username"], user["channel"], dt, msgContent, colour.hex, time.time()])
-        sqlite3_conn.commit()
+        if blacklist.checkBlacklist(data["content"]) == True:
+            print("User " + user["username"] + " used a blacklisted word")
+            if kickOnUse == True:
+                permissions.kickUser(user, blKickReason, clients, False)
+            else:
+                message = {
+                        "username": "",
+                        "channel": "",
+                        "content": ["","system","[SERVER] You used a blacklisted word, and your message was not sent.", ""],
+                        "messagetype": "outboundMessage"
+                        }
+                data = encodeEncrypted(message, user["secret"])
+                conn.send(data)
+        else:
+            currentDT = datetime.datetime.now()
+            dt = str(currentDT.strftime("%d-%m-%Y %H:%M:%S"))
+            msgContent = data["content"]
+            #colour = str((binascii.hexlify(user["username"].encode('utf-8'))).decode('utf-8'))[:6]
+            colour = ColorHash(user["username"])
+            message = {
+                "username": "",
+                "channel": data["channel"],
+                "content": [str(dt), user["username"], data["content"], colour.hex],
+                "messagetype": "outboundMessage"
+                }       
+            for cl in clients:
+                if cl["channel"] == user["channel"]:
+                    data = encodeEncrypted(message, cl["secret"])
+                    cl["conn"].send(data)
+                    print("Sent " + message["messagetype"] + " to client " + cl["username"] + str(cl["addr"]))
+            c.execute("INSERT INTO chatlogs (ip, username, channel, date, message) values (?,?,?,?,?)",[str(user["addr"]), user["username"], user["channel"], dt, msgContent])
+            sqlite3_conn.commit()
+            c.execute("INSERT INTO tempchatlogs (username, channel, date, message, colour, realtime) values (?,?,?,?,?,?)",[user["username"], user["channel"], dt, msgContent, colour.hex, time.time()])
+            sqlite3_conn.commit()
