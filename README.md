@@ -2,20 +2,9 @@
 ### The python server for [Echo](https://github.com/will-scargill/Echo) 
 
 ## Dependancies
-##### Python Default Library
-* socket
-* os
-* sys
-* json
-* threaing
-* random
-* time
-* sqlite3
-* datetime
-* base64
-* configparser
-##### Non-default library
-* [pycryptodome](https://pypi.org/project/pycryptodome/)
+* To install all required dependancies, run the following command:
+
+`python3 -m pip install -r requirements.txt`
 
 ## Server Configuration
 
