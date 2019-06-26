@@ -28,15 +28,15 @@ from net import userReq
 
 from net import sendMessage
 
-sqlite3_conn = sqlite3.connect(r"data/database.db", check_same_thread=False)
-c = sqlite3_conn.cursor()
+sqlite3_conn = sqlite3.connect(r"data/database.db", check_same_thread=False) # Connect to the database
+c = sqlite3_conn.cursor() # Setup sqlite cursor
 
-try:
+try: # Try to read data from RSA keys to check if they exist
     fileIn = open(r"data/public.pem", "rb")
     fileIn.close()
     fileIn = open(r"data/private.pem", "rb")
     fileIn.close()
-except:
+except: # If they don't, generate RSA keys
     print("Rsa keys not found, generating...")
     exec(open("regenerateRsaKeys.py").read())
 
@@ -55,11 +55,11 @@ tables = [
     },
     {
         "name": "commandlogs",
-        "columns": "ip TEXT, username TEXT, channel TEXT, date TEXT, command TEXT, reason TEXT"
+        "columns": "senderip TEXT, senderusername TEXT, targetip TEXT, targetusername TEXT, channel TEXT, date TEXT, command TEXT, reason TEXT"
     },
     {
         "name": "pmlogs",
-        "columns": "ip TEXT, username TEXT, channel TEXT, date TEXT, message TEXT"
+        "columns": "senderip TEXT, senderusername TEXT, targetip TEXT, targetusername TEXT, channel TEXT, date TEXT, message TEXT"
     },
     {
         "name": "tempchatlogs",
@@ -67,13 +67,13 @@ tables = [
     }
 ]
 
-for table in tables:
+for table in tables: # Create database tables if they don't exist
     c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [table["name"]])
     data = c.fetchall()
     if len(data) <= 0:  # If table doesn't exist
         c.execute("CREATE TABLE " + table["name"] + " (" + table["columns"] + ")")
 
-clients = []
+
 
 channels = config.GetSetting("channels", "Server")
 
@@ -81,7 +81,7 @@ password = config.GetSetting("password", "Server")
 
 port = config.GetSetting("port", "Server")
     
-def splitCombinedMessages(data):
+def splitCombinedMessages(data): # Used to seperate messages if multiple messages are sent as one
     messages = []
     dataSplit = data.split("][")
     for d in dataSplit:
@@ -95,7 +95,7 @@ def splitCombinedMessages(data):
     return messages
     
 
-def decodeEncrypted(rawData, key):
+def decodeEncrypted(rawData, key): # Decode encrypted network data
     try:
         rawData = rawData.decode('utf-8') #Decode utf-8 data
         rawData = rawData.strip()
@@ -114,7 +114,7 @@ def decodeEncrypted(rawData, key):
         print("json error")
         print(data)
 
-def client_connection_thread(conn, addr):
+def client_connection_thread(conn, addr): # Main connection thread for all clients
     try:
         print("Incoming connection from address " + str(addr))
         confirmedDisconnect = False
@@ -125,20 +125,20 @@ def client_connection_thread(conn, addr):
         
         # Encryption set up start
 
-        fileIn = open(r"data/private.pem", "rb")
+        fileIn = open(r"data/private.pem", "rb") # Read private key
         bytesIn = fileIn.read()
         private = RSA.import_key(bytesIn)
         fileIn.close()
 
-        fileIn = open(r"data/public.pem", "rb")
+        fileIn = open(r"data/public.pem", "rb") # Read public key
         bytesIn = fileIn.read()
-        public = RSA.import_key(bytesIn)
+        public = RSA.import_key(bytesIn) 
         fileIn.close()
 
-        publicToSend = bytesIn.decode('utf-8')
+        publicToSend = bytesIn.decode('utf-8') # Get string of public key to send to client
         
-        encObject = PKCS1_OAEP.new(public)
-        decObject = PKCS1_OAEP.new(private)
+        encObject = PKCS1_OAEP.new(public) # Setup public key encryption object
+        decObject = PKCS1_OAEP.new(private) # Setup private key encryption object
         
         message = {
             "username": "",
@@ -157,7 +157,7 @@ def client_connection_thread(conn, addr):
         data = json.loads(data)
         print("Recieved secretKey from address " + str(addr))
         
-        secretKey = decObject.decrypt(base64.b64decode(data["content"]))
+        secretKey = decObject.decrypt(base64.b64decode(data["content"])) # Decode the secret key we recieved from the client
 
         message = {
             "username": "",
@@ -183,7 +183,7 @@ def client_connection_thread(conn, addr):
             "check": False,
             "secret": secretKey
             }
-        c.execute("SELECT * FROM banned_ips")
+        c.execute("SELECT * FROM banned_ips") # Get all banned IPs from the database
         bannedIpsAllData = c.fetchall()
         bannedIps = []
         for usr in bannedIpsAllData:
@@ -192,9 +192,9 @@ def client_connection_thread(conn, addr):
         for ip in bannedIps:
             if ip == user["addr"][0]:
                 userBanned = True
-        if (data[0]["content"][1] == password) and (userBanned == False):
+        if (data[0]["content"][1] == password) and (userBanned == False): # If the password is correct & the client isn't banned
 
-            user["check"] = True
+            user["check"] = True # user["check"] keeps track of whether the user is connected
             
             message = {
             "username": "",
@@ -224,7 +224,6 @@ def client_connection_thread(conn, addr):
                 rawData = decodeEncrypted(rawData, user["secret"])
                 for data in rawData:
                     print("Recieved " + data["messagetype"] + " from client " + user["username"] + str(user["addr"]))
-                    #print(data["content"])
                     if data["messagetype"] == "inboundMessage":
                         inboundMessage.handle(conn, addr, c, sqlite3_conn, data, user, clients)
                     elif data["messagetype"] == "changedChannel":
@@ -235,13 +234,10 @@ def client_connection_thread(conn, addr):
                         messageReq.handle(conn, addr, c, sqlite3_conn, data, user, clients)
                     elif data["messagetype"] == "userReq":
                         userReq.handle(conn, addr, c, sqlite3_conn, data, user, clients)
-                        
-                    #except TypeError:
-                        #print("Recieved data triggered type error - slowdown")
                     
                     
-        else:
-            if (user["addr"][0] in bannedIps):
+        else: # One or more joining conditions was not fulfilled
+            if (user["addr"][0] in bannedIps): # If the client was banned
                 message = {
                 "username": "",
                 "channel": "",
@@ -251,7 +247,7 @@ def client_connection_thread(conn, addr):
                 data = encodeEncrypted(message, user["secret"])
                 conn.send(data)
                 print("Connection request from " + str(addr) + " denied - User is banned")
-            elif (data[0]["content"][1] != password):
+            elif (data[0]["content"][1] != password): # If the password was incorrect
                 message = {
                 "username": "",
                 "channel": "",
@@ -263,11 +259,12 @@ def client_connection_thread(conn, addr):
                 print("Connection request from " + str(addr) + " denied - Incorrect password")
                          
             conn.close()
-    except(ConnectionResetError) as e:
+    except(ConnectionResetError) as e: # If a connection error occurs
         print("Connection lost to client: " + str(addr))
         try:
             check = False
             clients.remove(user)
+            # Code below updates users who were in the same channel
             oldChannelCls = []
             for cl in clients:
                 if cl["channel"] == user["channel"]:
@@ -291,24 +288,24 @@ def client_connection_thread(conn, addr):
         conn.close()
     
     
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Setup socket object
 
 host = "127.0.0.1"
 #port = 16000
 
 try:
-    s.bind(("", int(port)))
+    s.bind(("", int(port))) 
 except socket.error as e:
     print(e)
 
-s.listen(20)
+s.listen(20) # Listen for connections
 
 clients = []
 
 print("Listening...")
 
 while True:
-    conn, addr = s.accept()
+    conn, addr = s.accept() # Accept incoming connections
 
-    threading.Thread(target=client_connection_thread, args=(conn,addr)).start()
+    threading.Thread(target=client_connection_thread, args=(conn,addr)).start() # Start a new thread for the client
 
