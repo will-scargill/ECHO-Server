@@ -18,9 +18,9 @@
 * To add a new channel, you can paste `,""` before the final square bracket, and write the name of the channel you wish to add in-between the quote marks
 > ["Channel 1", "Channel 2", "Channel 3"]
 ##### Password
-* If you wish to add a password to your server, simply type the password you wish to use after the equals sign
+* If you wish  add a password to your server, simply type the password you wish to use after the equals sign
 > password = [password goes here]
-* If you do not wish to use a password you can simply leave this blank
+* If you do not wish to to use a password you can simply leave this blank
 ##### port
 * This is the port that people will connect to your server through
 * You can change this by simply changing the number after the equals sign
