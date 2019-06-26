@@ -1,4 +1,5 @@
 # Echo Server
+### Version 1.01
 ### The python server for [Echo](https://github.com/will-scargill/Echo) 
 
 ## Dependancies
